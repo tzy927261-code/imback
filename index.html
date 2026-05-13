@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>你咋不找我聊天</title>
+    <style>
+        /* Reset margin and padding */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Prevent scrolling */
+            background-color: #050505; /* Deep dark background */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Canvas styling */
+        #particleCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1; /* Keep canvas behind any overlay text if added later */
+        }
+
+        /* Overlay text for fallback or additional styling (optional, not used here as text is drawn on canvas) */
+        .message-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.1);
+            font-size: 5vw;
+            font-weight: bold;
+            pointer-events: none; /* Let clicks pass through */
+            z-index: 0;
+            text-align: center;
+            white-space: nowrap;
+        }
+        
+        /* Interactive hint styling */
+        .hint {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 105, 180, 0.7); /* Soft pink color */
+            font-size: 14px;
+            letter-spacing: 2px;
+            z-index: 2;
+            pointer-events: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="particleCanvas"></canvas>
+    
+    <div class="hint">滑动鼠标或点击屏幕互动吧 ✨</div>
+
+    <script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        const particles = [];
+        const textMessage = "俺回来了！！！！！";
+        
+        // Mouse interaction object
+        const mouse = {
+            x: null,
+            y: null,
+            radius: 100, // Interaction radius
+            isDown: false
+        };
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth || window.screen.availWidth || 800;
+            height = canvas.height = window.innerHeight || window.screen.availHeight || 600;
+            if (width > 0 && height > 0) {
+                init(); // Re-initialize particles on resize to fit new dimensions
+            }
+        });
+
+        // Mouse events
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.x;
+            mouse.y = e.y;
+        });
+
+        window.addEventListener('mousedown', () => {
+            mouse.isDown = true;
+            mouse.radius = 200; // Expand interaction area on click
+            
+            // Create a burst effect on click
+            createBurst(mouse.x, mouse.y);
+        });
+
+        window.addEventListener('mouseup', () => {
+            mouse.isDown = false;
+            mouse.radius = 100; // Reset interaction area
+        });
+        
+        // Touch events for mobile
+        window.addEventListener('touchstart', (e) => {
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+            mouse.isDown = true;
+            mouse.radius = 150;
+            createBurst(mouse.x, mouse.y);
+        });
+        
+        window.addEventListener('touchmove', (e) => {
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+        });
+        
+        window.addEventListener('touchend', () => {
+            mouse.x = null;
+            mouse.y = null;
+            mouse.isDown = false;
+            mouse.radius = 100;
+        });
+
+        // Mouse leaves the window
+        window.addEventListener('mouseout', () => {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = Math.random() * width; // Start at random position for intro effect
+                this.y = Math.random() * height;
+                this.destX = x; // Target X coordinate
+                this.destY = y; // Target Y coordinate
+                
+                this.size = Math.random() * 2 + 1.5;
+                this.color = color;
+                
+                // Physics properties
+                this.vx = (Math.random() - 0.5) * 5;
+                this.vy = (Math.random() - 0.5) * 5;
+                this.friction = Math.random() * 0.05 + 0.85; // Air resistance
+                this.ease = Math.random() * 0.05 + 0.05;     // Easing back to destination
+                this.baseSize = this.size;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Optional: Add a subtle glow
+                ctx.shadowBlur = 5;
+                ctx.shadowColor = this.color;
+            }
+
+            update() {
+                let dx = mouse.x - this.x;
+                let dy = mouse.y - this.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Interaction logic
+                if (mouse.x !== null && distance < mouse.radius) {
+                    // Push particles away from mouse
+                    let forceDirectionX = dx / distance;
+                    let forceDirectionY = dy / distance;
+                    let force = (mouse.radius - distance) / mouse.radius;
+                    
+                    let pushFactor = mouse.isDown ? 15 : 5; // Stronger push if clicked
+                    
+                    this.vx -= forceDirectionX * force * pushFactor;
+                    this.vy -= forceDirectionY * force * pushFactor;
+                    
+                    // Slightly increase size when interacting
+                    this.size = Math.min(this.baseSize * 2, this.size + 0.5);
+                } else {
+                    // Return to normal size
+                    if (this.size > this.baseSize) {
+                        this.size -= 0.1;
+                    }
+                }
+
+                // Spring back to original destination
+                let destDx = this.destX - this.x;
+                let destDy = this.destY - this.y;
+                
+                this.vx += destDx * this.ease;
+                this.vy += destDy * this.ease;
+                
+                // Apply friction
+                this.vx *= this.friction;
+                this.vy *= this.friction;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+        }
+
+        function createBurst(x, y) {
+            // Add some temporary floating particles on click
+            for (let i = 0; i < 20; i++) {
+                let p = new Particle(x, y, `hsl(${Math.random() * 360}, 100%, 70%)`);
+                p.x = x;
+                p.y = y;
+                // Scatter them
+                p.vx = (Math.random() - 0.5) * 20;
+                p.vy = (Math.random() - 0.5) * 20;
+                p.ease = 0.01; // Slower return
+                particles.push(p);
+                
+                // Remove these temporary particles after a while to keep performance good
+                setTimeout(() => {
+                    let index = particles.indexOf(p);
+                    if (index > -1) particles.splice(index, 1);
+                }, 2000);
+            }
+        }
+
+        function init() {
+            // Ensure width and height are strictly greater than 0 to prevent IndexSizeError
+            width = canvas.width = window.innerWidth || window.screen.availWidth || 800;
+            height = canvas.height = window.innerHeight || window.screen.availHeight || 600;
+
+            if (width <= 0 || height <= 0) return; // Safety check
+
+            particles.length = 0; // Clear existing particles
+            
+            // Create a temporary canvas to draw text and read pixels
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+
+            // Set up text styling
+            tempCtx.fillStyle = 'white';
+            
+            // Adjust font size based on screen width
+            let fontSize = width < 600 ? 50 : (width < 1000 ? 80 : 120);
+            tempCtx.font = `bold ${fontSize}px 'Microsoft YaHei', sans-serif`;
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+
+            // Draw the text
+            tempCtx.fillText(textMessage, width / 2, height / 2);
+
+            // Get image data (pixels)
+            const textCoordinates = tempCtx.getImageData(0, 0, width, height);
+            
+            // Define a sampling gap (higher = fewer particles, better performance)
+            const gap = width < 600 ? 4 : 5; 
+            
+            // Loop through pixels
+            for (let y = 0; y < textCoordinates.height; y += gap) {
+                for (let x = 0; x < textCoordinates.width; x += gap) {
+                    // Get alpha value (opacity) of the pixel
+                    // ImageData.data is a flat array [R,G,B,A, R,G,B,A...]
+                    const index = (y * width + x) * 4;
+                    const alpha = textCoordinates.data[index + 3];
+
+                    // If pixel is not transparent (part of the text)
+                    if (alpha > 128) {
+                        // Create romantic color palette (pinks, purples, blues)
+                        const hue = 280 + Math.random() * 80; // Ranges from purple to red/pink
+                        const saturation = 80 + Math.random() * 20;
+                        const lightness = 60 + Math.random() * 20;
+                        const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                        
+                        particles.push(new Particle(x, y, color));
+                    }
+                }
+            }
+        }
+
+        function animate() {
+            // Clear canvas with a slight trail effect (using semi-transparent black)
+            // For sharp particles, use clearRect
+            // ctx.clearRect(0, 0, width, height);
+            
+            // Draw background with low opacity to create trails
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)'; 
+            ctx.fillRect(0, 0, width, height);
+            
+            // Disable shadow blur for performance if needed, but it adds to the glow effect
+            
+            // Update and draw all particles
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        window.onload = function() {
+            // Ensure dimensions are properly calculated before initializing
+            width = canvas.width = window.innerWidth || window.screen.availWidth || 800;
+            height = canvas.height = window.innerHeight || window.screen.availHeight || 600;
+
+            // Initialize particles based on text
+            if (width > 0 && height > 0) {
+                init();
+            }
+            
+            // Initial scatter effect - make them fly in from random positions
+            // (Handled in Particle constructor initially)
+            
+            // Start animation loop
+            animate();
+        };
+
+    </script>
+</body>
+</html>
